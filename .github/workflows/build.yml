@@ -1,4 +1,4 @@
-name: Klasorden Doğrudan APK Derleme
+name: Sifirdan Android Projesi Olustur ve Derle
 
 on:
   push:
@@ -7,25 +7,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  apk-derle:
+  proje-olustur-ve-derle:
     runs-on: ubuntu-latest
 
     steps:
       - name: Depodaki Dosyalara Eris
         uses: actions/checkout@v4
-
-      - name: Proje Klasorunu Otomatik Kokla ve Bul
-        run: |
-          # Klasör adı ne olursa olsun (boşluklu, Türkçe) build.gradle dosyasını bulur
-          PROJE_YOLU=$(find . -name "build.gradle" -o -name "build.gradle.kts" | head -n 1 | xargs dirname)
-          
-          if [ -z "$PROJE_YOLU" ]; then
-            echo "HATA: Depoda hiçbir Android projesi (build.gradle) bulunamadı!"
-            exit 1
-          fi
-          
-          echo "Proje başarıyla tespit edildi: $PROJE_YOLU"
-          echo "PROJE_DIZINI=$PROJE_YOLU" >> $GITHUB_ENV
 
       - name: Java Ortamini Kur
         uses: actions/setup-java@v4
@@ -33,22 +20,101 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: APK Dosyasini Derle (Build)
+      - name: Android Proje Kalibini Sifirdan Olustur
         run: |
-          # Tespit edilen o klasörün içine güvenli şekilde giriş yapıyoruz
-          cd "${{ env.PROJE_DIZINI }}"
+          echo "=== 1. Proje Yapisi Hazirlaniyor ==="
+          # Android için gerekli standart klasör mimarisini oluşturuyoruz
+          mkdir -p app/src/main/java
+          mkdir -p app/src/main/res/layout
+          mkdir -p app/src/main/res/values
+
+          echo "=== 2. Eksik Gradle Yapılandırma Dosyaları Oluşturuluyor ==="
+          # settings.gradle oluşturma
+          echo "rootProject.name = 'OtomatikAndroidProjesi'" > settings.gradle
+          echo "include ':app'" >> settings.gradle
+
+          # Ana build.gradle oluşturma
+          cat << 'EOF' > build.gradle
+          buildscript {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:8.2.2'
+              }
+          }
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          EOF
+
+          # app/build.gradle oluşturma (SDK ve derleme ayarları)
+          cat << 'EOF' > app/build.gradle
+          plugins {
+              id 'com.android.application'
+          }
+          android {
+              namespace 'com.example.otomatikuygulama'
+              compileSdk 34
+              defaultConfig {
+                  applicationId "com.example.otomatikuygulama"
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          EOF
+
+          echo "=== 3. Mevcut Kod Dosyalari Doğru Klasorlere Tasiniyor ==="
+          # Deponuzda duran dağınık durumdaki tüm Java kodlarını oluşturduğumuz klasöre kopyalıyoruz
+          find . -maxdepth 5 -name "*.java" ! -path "*/app/*" -exec cp {} app/src/main/java/ \; || true
           
-          chmod +x gradlew || true
-          
-          if [ -f "./gradlew" ]; then
-            ./gradlew assembleDebug
-          else
-            gradle assembleDebug
+          # XML arayüz ve kaynak dosyalarını ilgili res klasörlerine taşıyoruz
+          find . -maxdepth 5 -name "*.xml" ! -name "build.gradle" ! -name "AndroidManifest.xml" ! -path "*/app/*" -exec cp {} app/src/main/res/layout/ \; || true
+
+          # Eğer depoda AndroidManifest.xml yoksa, temel bir tane oluşturuyoruz
+          if [ ! -f "app/src/main/AndroidManifest.xml" ]; then
+             cat << 'EOF' > app/src/main/AndroidManifest.xml
+             <manifest xmlns:android="http://android.com">
+                 <application
+                     android:allowBackup="true"
+                     android:label="Otomatik Uygulama"
+                     android:theme="@android:style/Theme.DeviceDefault">
+                     <!-- Kodlarınızın çalışabilmesi için temel bir aktivite ekliyoruz -->
+                     <activity android:name=".MainActivity" android:exported="true">
+                         <intent-filter>
+                             <action android:name="android.intent.action.MAIN" />
+                             <category android:name="android.intent.category.LAUNCHER" />
+                         </intent-filter>
+                     </activity>
+                 </application>
+             </manifest>
+          EOF
           fi
+
+      - name: Gradle Sistemini Yukle ve APK Derle
+        run: |
+          echo "=== 4. APK Derleme Islemi Baslatiliyor ==="
+          # Sunucudaki yerel gradle motoru ile sıfırdan oluşturulan projeyi derliyoruz
+          gradle assembleDebug --project-dir .
 
       - name: Uretilen APK Dosyasini Yukle
         uses: actions/upload-artifact@v4
         with:
           name: Android-Uygulama-APK
-          path: "**/build/outputs/apk/debug/*.apk"
+          path: "app/build/outputs/apk/debug/*.apk"
           
