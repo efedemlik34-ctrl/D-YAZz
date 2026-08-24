@@ -1,38 +1,39 @@
-name: Android Proje Hazirlama
+name: Belirli Klasoru ZIP icinden Cikar
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch: # Manuel olarak da tetikleyebilmeniz için
+  workflow_dispatch:
 
 jobs:
-  hazirlik-ve-unzip:
+  klasor-cikar:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # GitHub'ın dosyaları açıp klasöre yazabilmesi için şarttır
+      contents: write
 
     steps:
       - name: Depodaki Dosyalara Eris
         uses: actions/checkout@v4
 
-      - name: ZIP Dosyalarini Bul ve Ac
+      - name: Sadece kaynak kodlarini Klasorunu Cikar
         run: |
-          # Depodaki tüm .zip dosyalarını otomatik bulur ve klasöre çıkartır
+          # Depodaki .zip dosyasını bulur ve sadece "kaynak kodlarını" klasörünü ve içindekileri çıkarır
+          # Not: Klasör adındaki boşluklar ve Türkçe karakterler için tırnak kullanılmıştır.
+          
           for f in *.zip; do
             if [ -f "$f" ]; then
-              echo "$f dosyası açılıyor..."
-              unzip -o "$f"
-              rm "$f" # ZIP dosyasını kalabalık etmesin diye siler
+              echo "$f içinden 'kaynak kodlarını' klasörü çıkarılıyor..."
+              unzip -o "$f" "kaynak kodlarını/*"
+              rm "$f" # İşlem bitince ZIP dosyasını siler
             fi
           done
 
-      - name: Klasor Yapisini Github'a Geri Yukle
+      - name: Degisiklikleri Github'a Kaydet
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add .
-          # Eğer değişen bir şey yoksa hata vermeden işlemi sonlandırır
-          git diff-index --quiet HEAD || git commit -m "Build: ZIP icerigi klasorlere cikarildi"
+          git diff-index --quiet HEAD || git commit -m "Build: kaynak kodlarını klasörü ZIP'ten çıkarıldı"
           git push origin main
           
