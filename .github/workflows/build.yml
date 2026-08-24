@@ -1,4 +1,4 @@
-name: Turkce Karakter Uyumlu APK Derleme
+name: Klasorden Doğrudan APK Derleme
 
 on:
   push:
@@ -9,32 +9,22 @@ on:
 jobs:
   apk-derle:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - name: Depodaki Dosyalara Eris
         uses: actions/checkout@v4
 
-      - name: ZIP Dosyasini Ac ve Ismi Otomatik Duzelt
+      - name: Proje Klasorunu Otomatik Kokla ve Bul
         run: |
-          # 1. ZIP dosyasını açıyoruz
-          unzip -o *.zip
-          
-          # 2. "kaynak kodlarını" veya benzeri Türkçe isimli klasörleri bulup ismini değiştiriyoruz
-          # Klasör adındaki boşluk ve Türkçe karakter sorununu kökten çözer
-          find . -maxdepth 1 -type d ! -name "." ! -name ".*" -exec mv {} ./android_proje \; 2>/dev/null || true
-          
-          echo "Klasör ismi 'android_proje' olarak güvenli hale getirildi."
-          
-          # 3. build.gradle dosyasının yerini yeni klasörün içinde doğrula
-          PROJE_YOLU=$(find android_proje -name "build.gradle" -o -name "build.gradle.kts" | head -n 1 | xargs dirname)
+          # Klasör adı ne olursa olsun (boşluklu, Türkçe) build.gradle dosyasını bulur
+          PROJE_YOLU=$(find . -name "build.gradle" -o -name "build.gradle.kts" | head -n 1 | xargs dirname)
           
           if [ -z "$PROJE_YOLU" ]; then
-            echo "HATA: Klasör içinde build.gradle bulunamadı!"
+            echo "HATA: Depoda hiçbir Android projesi (build.gradle) bulunamadı!"
             exit 1
           fi
           
+          echo "Proje başarıyla tespit edildi: $PROJE_YOLU"
           echo "PROJE_DIZINI=$PROJE_YOLU" >> $GITHUB_ENV
 
       - name: Java Ortamini Kur
@@ -45,7 +35,7 @@ jobs:
 
       - name: APK Dosyasini Derle (Build)
         run: |
-          # İsmi düzeltilen klasörün içine güvenle giriyoruz
+          # Tespit edilen o klasörün içine güvenli şekilde giriş yapıyoruz
           cd "${{ env.PROJE_DIZINI }}"
           
           chmod +x gradlew || true
