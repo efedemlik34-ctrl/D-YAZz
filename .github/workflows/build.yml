@@ -22,11 +22,9 @@ jobs:
 
       - name: Android Proje Kalibini Sifirdan Olustur
         run: |
-          echo "=== 1. Temel Proje Yapisi ==="
           mkdir -p app/src/main/res/layout
           mkdir -p app/src/main/res/values
 
-          echo "=== 2. Yapilandirma Dosyalari ==="
           echo "rootProject.name = 'OtomatikAndroidProjesi'" > settings.gradle
           echo "include ':app'" >> settings.gradle
 
@@ -58,38 +56,28 @@ jobs:
           }
           EOF
 
-          echo "=== 3. Kaynak Dosyalari Tasiniyor (Gelistirilmis Akilli Tasima) ==="
-          
-          # XML dosyalarını temizleyerek taşıyoruz
+          # XML taşıma
           find . -maxdepth 5 -name "*.xml" ! -name "build.gradle" ! -name "AndroidManifest.xml" ! -path "*/app/*" | while read -r dosya; do
               dosya_adi=$(basename "$dosya")
-              # Dosya adında HERHANGİ bir yerinde '$' işareti varsa bu sistem artığıdır, atla
-              if [[ "$dosya_adi" == *\$* ]]; then
-                  echo "Sistem dosyası temizlendi: $dosya_adi"
-              else
+              if [[ "$dosya_adi" != *\$* ]]; then
                   temiz_ad=$(echo "$dosya_adi" | tr 'A-Z' 'a-z')
                   cp "$dosya" "app/src/main/res/layout/$temiz_ad" || true
               fi
           done
 
-          # Java dosyalarını paket adlarına göre dinamik klasör oluşturarak taşıyoruz
+          # Java taşıma
           find . -maxdepth 5 -name "*.java" ! -path "*/app/*" | while read -r java_dosya; do
-              # Java dosyasının içindeki gerçek package satırını buluyoruz (Örn: package com.test.app;)
               PAKET_SATIRI=$(grep -E "^package " "$java_dosya" | head -n 1 || true)
               if [ -n "$PAKET_SATIRI" ]; then
-                  # "package " kısmını ve sondaki ";" işaretini silip klasör yoluna dönüştürüyoruz (com/test/app)
                   PAKET_YOLU=$(echo "$PAKET_SATIRI" | sed 's/package //' | sed 's/;//' | tr '.' '/' | tr -d '\r' | xargs)
                   mkdir -p "app/src/main/java/$PAKET_YOLU"
                   cp "$java_dosya" "app/src/main/java/$PAKET_YOLU/"
-                  echo "Java dosyası kendi orijinal paket yoluna taşındı: $PAKET_YOLU/$(basename "$java_dosya")"
               else
-                  # Eğer package yazmıyorsa varsayılan ana dizine at
                   mkdir -p app/src/main/java/com/example/otomatikuygulama
                   cp "$java_dosya" app/src/main/java/com/example/otomatikuygulama/
               fi
           done
 
-          # Temel Manifest dosyasını yaz
           if [ ! -f "app/src/main/AndroidManifest.xml" ]; then
              cat << 'EOF' > app/src/main/AndroidManifest.xml
              <manifest xmlns:android="http://android.com">
@@ -108,15 +96,14 @@ jobs:
           EOF
           fi
 
-      - name: Gradle Sistemini Yukle ve APK Derle
+      - name: APK Derle ve Hatayi Dosyaya Kaydet
         run: |
-          echo "=== 4. APK Derleme Islemi Baslatiliyor ==="
-          # Hatanın kökenini tam döküm alabilmek için --stacktrace ekledik
-          gradle assembleDebug --project-dir . --stacktrace
+          # Derleme hatasını süzüp "hata_raporu.txt" isimli bir dosyaya yazdırıyoruz
+          gradle assembleDebug --project-dir . --info > hata_raporu.txt 2>&1 || true
 
-      - name: Uretilen APK Dosyasini Yukle
+      - name: Hata Raporunu Disari Aktar
         uses: actions/upload-artifact@v4
         with:
-          name: Android-Uygulama-APK
-          path: "app/build/outputs/apk/debug/*.apk"
+          name: Derleme-Hata-Raporu
+          path: hata_raporu.txt
           
