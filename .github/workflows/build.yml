@@ -1,4 +1,4 @@
-name: Belirli Klasoru ZIP icinden Cikar
+name: ZIP icinden APK Derleme
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  klasor-cikar:
+  apk-derle:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -16,24 +16,45 @@ jobs:
       - name: Depodaki Dosyalara Eris
         uses: actions/checkout@v4
 
-      - name: Sadece kaynak kodlarini Klasorunu Cikar
+      - name: ZIP Dosyasini Tamamen Ac
         run: |
-          # Depodaki .zip dosyasını bulur ve sadece "kaynak kodlarını" klasörünü ve içindekileri çıkarır
-          # Not: Klasör adındaki boşluklar ve Türkçe karakterler için tırnak kullanılmıştır.
+          # Hata almamak için ZIP içindeki her şeyi geçici bir klasöre açıyoruz
+          mkdir proje_klasoru
+          unzip -o *.zip -d proje_klasoru
           
-          for f in *.zip; do
-            if [ -f "$f" ]; then
-              echo "$f içinden 'kaynak kodlarını' klasörü çıkarılıyor..."
-              unzip -o "$f" "kaynak kodlarını/*"
-              rm "$f" # İşlem bitince ZIP dosyasını siler
-            fi
-          done
+          # build.gradle dosyasının tam olarak nerede olduğunu bulalım ve oraya geçelim
+          GRADLE_PATH=$(find proje_klasoru -name "build.gradle" -o -name "build.gradle.kts" | head -n 1)
+          PROJE_DIZINI=$(dirname "$GRADLE_PATH")
+          echo "Proje ana dizini bulundu: $PROJE_DIZINI"
+          
+          # Proje dosyalarını GitHub ana dizinine taşıyoruz ki Gradle çalışabilsin
+          mv "$PROJE_DIZINI"/* . || true
+          mv "$PROJE_DIZINI"/.* . || true 2>/dev/null
 
-      - name: Degisiklikleri Github'a Kaydet
+      - name: Java Ortamini Kur
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17' # Çoğu modern Android projesi için Java 17 gereklidir
+
+      - name: Gradle Calistirma Izni Ver
+        run: chmod +x gradlew
+        continue-on-error: true
+
+      - name: APK Dosyasini Derle (Build)
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add .
+          # Eğer gradlew dosyası varsa onunla, yoksa sistemdeki gradle ile derle
+          if [ -f "./gradlew" ]; then
+            ./gradlew assembleDebug
+          else
+            gradle assembleDebug
+          fi
+
+      - name: Hazirlanan APK Dosyasini Yukle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-Uygulama-APK
+          path: app/build/outputs/apk/debug/*.apk
           git diff-index --quiet HEAD || git commit -m "Build: kaynak kodlarını klasörü ZIP'ten çıkarıldı"
           git push origin main
           
