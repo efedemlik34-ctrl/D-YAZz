@@ -1,0 +1,38 @@
+name: Android Proje Hazirlama
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Manuel olarak da tetikleyebilmeniz için
+
+jobs:
+  hazirlik-ve-unzip:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # GitHub'ın dosyaları açıp klasöre yazabilmesi için şarttır
+
+    steps:
+      - name: Depodaki Dosyalara Eris
+        uses: actions/checkout@v4
+
+      - name: ZIP Dosyalarini Bul ve Ac
+        run: |
+          # Depodaki tüm .zip dosyalarını otomatik bulur ve klasöre çıkartır
+          for f in *.zip; do
+            if [ -f "$f" ]; then
+              echo "$f dosyası açılıyor..."
+              unzip -o "$f"
+              rm "$f" # ZIP dosyasını kalabalık etmesin diye siler
+            fi
+          done
+
+      - name: Klasor Yapisini Github'a Geri Yukle
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add .
+          # Eğer değişen bir şey yoksa hata vermeden işlemi sonlandırır
+          git diff-index --quiet HEAD || git commit -m "Build: ZIP icerigi klasorlere cikarildi"
+          git push origin main
+          
