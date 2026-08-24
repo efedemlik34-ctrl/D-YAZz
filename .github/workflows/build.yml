@@ -1,4 +1,4 @@
-name: Sifirdan Android Projesi Olustur ve Derle
+name: Kesin Android APK Derleme
 
 on:
   push:
@@ -7,8 +7,10 @@ on:
   workflow_dispatch:
 
 jobs:
-  proje-olustur-ve-derle:
+  apk-derle:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Depodaki Dosyalara Eris
@@ -20,11 +22,13 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Android Proje Kalibini Sifirdan Olustur
+      - name: Android Proje Kalibini Hazirla
         run: |
+          echo "=== 1. Klasorler Hazirlaniyor ==="
           mkdir -p app/src/main/res/layout
           mkdir -p app/src/main/res/values
 
+          echo "=== 2. Yapilandirma Yaziliyor ==="
           echo "rootProject.name = 'OtomatikAndroidProjesi'" > settings.gradle
           echo "include ':app'" >> settings.gradle
 
@@ -56,7 +60,8 @@ jobs:
           }
           EOF
 
-          # XML taşıma
+          echo "=== 3. Temiz Kodlar Klasore Aktariliyor ==="
+          # Temiz XML'ler taşınıyor
           find . -maxdepth 5 -name "*.xml" ! -name "build.gradle" ! -name "AndroidManifest.xml" ! -path "*/app/*" | while read -r dosya; do
               dosya_adi=$(basename "$dosya")
               if [[ "$dosya_adi" != *\$* ]]; then
@@ -65,7 +70,7 @@ jobs:
               fi
           done
 
-          # Java taşıma
+          # Java'lar orijinal paket adlarına göre taşınıyor
           find . -maxdepth 5 -name "*.java" ! -path "*/app/*" | while read -r java_dosya; do
               PAKET_SATIRI=$(grep -E "^package " "$java_dosya" | head -n 1 || true)
               if [ -n "$PAKET_SATIRI" ]; then
@@ -78,6 +83,7 @@ jobs:
               fi
           done
 
+          # Temel Manifest yazılıyor
           if [ ! -f "app/src/main/AndroidManifest.xml" ]; then
              cat << 'EOF' > app/src/main/AndroidManifest.xml
              <manifest xmlns:android="http://android.com">
@@ -96,14 +102,22 @@ jobs:
           EOF
           fi
 
-      - name: APK Derle ve Hatayi Dosyaya Kaydet
+      - name: Gercek APK Derlemesini Baslat
         run: |
-          # Derleme hatasını süzüp "hata_raporu.txt" isimli bir dosyaya yazdırıyoruz
-          gradle assembleDebug --project-dir . --info > hata_raporu.txt 2>&1 || true
+          echo "=== 4. APK Uretimi Basladi ==="
+          # || true komutunu kaldırdık, gerçek derleme yapıyor
+          gradle assembleDebug --project-dir .
 
-      - name: Hata Raporunu Disari Aktar
+      - name: Uretilen APK'yi Ana Dizine Topla
+        run: |
+          # Üretilen APK'yı bulup kolay erişim için ana dizine taşıyoruz
+          mkdir -p ciktilar
+          find app/build/outputs/apk/debug/ -name "*.apk" -exec cp {} ciktilar/uygulama.apk \; || echo "APK kopyalanamadi!"
+
+      - name: APK Dosyasini Indirilebilir Yap
         uses: actions/upload-artifact@v4
         with:
-          name: Derleme-Hata-Raporu
-          path: hata_raporu.txt
+          name: Hazir-Android-Uygulamasi
+          path: ciktilar/uygulama.apk
+          if-no-files-found: error
           
