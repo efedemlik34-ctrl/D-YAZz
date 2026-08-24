@@ -22,37 +22,24 @@ jobs:
 
       - name: Android Proje Kalibini Sifirdan Olustur
         run: |
-          echo "=== 1. Proje Yapisi Hazirlaniyor ==="
-          mkdir -p app/src/main/java
+          echo "=== 1. Temel Proje Yapisi ==="
           mkdir -p app/src/main/res/layout
           mkdir -p app/src/main/res/values
 
-          echo "=== 2. Yapilandirma Dosyalari Olusturuluyor ==="
+          echo "=== 2. Yapilandirma Dosyalari ==="
           echo "rootProject.name = 'OtomatikAndroidProjesi'" > settings.gradle
           echo "include ':app'" >> settings.gradle
 
           cat << 'EOF' > build.gradle
           buildscript {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:8.2.2'
-              }
+              repositories { google(); mavenCentral() }
+              dependencies { classpath 'com.android.tools.build:gradle:8.2.2' }
           }
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
+          allprojects { repositories { google(); mavenCentral() } }
           EOF
 
           cat << 'EOF' > app/build.gradle
-          plugins {
-              id 'com.android.application'
-          }
+          plugins { id 'com.android.application' }
           android {
               namespace 'com.example.otomatikuygulama'
               compileSdk 34
@@ -63,11 +50,7 @@ jobs:
                   versionCode 1
                   versionName "1.0"
               }
-              buildTypes {
-                  release {
-                      minifyEnabled false
-                  }
-              }
+              buildTypes { release { minifyEnabled false } }
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
                   targetCompatibility JavaVersion.VERSION_17
@@ -75,24 +58,38 @@ jobs:
           }
           EOF
 
-          echo "=== 3. Kodlar Tasiniyor ve Isim Hatalari Tamir Ediliyor ==="
-          # Java kodlarını taşıyoruz
-          find . -maxdepth 5 -name "*.java" ! -path "*/app/*" -exec cp {} app/src/main/java/ \; || true
+          echo "=== 3. Kaynak Dosyalari Tasiniyor (Gelistirilmis Akilli Tasima) ==="
           
-          # XML dosyalarını taşırken ismi '$' ile başlayan hatalı dosyaları eliyoruz
+          # XML dosyalarını temizleyerek taşıyoruz
           find . -maxdepth 5 -name "*.xml" ! -name "build.gradle" ! -name "AndroidManifest.xml" ! -path "*/app/*" | while read -r dosya; do
               dosya_adi=$(basename "$dosya")
-              # Eğer dosya adında '$' işareti varsa bunu derleme klasörüne kopyalama (Sistem dosyası artığıdır)
-              if [[ "$dosya_adi" == \$* ]]; then
-                  echo "Hatalı sistem dosyası atlandı: $dosya_adi"
+              # Dosya adında HERHANGİ bir yerinde '$' işareti varsa bu sistem artığıdır, atla
+              if [[ "$dosya_adi" == *\$* ]]; then
+                  echo "Sistem dosyası temizlendi: $dosya_adi"
               else
-                  # Dosya adını tamamen küçük harfe çevirerek kopyala (Android kuralı)
                   temiz_ad=$(echo "$dosya_adi" | tr 'A-Z' 'a-z')
                   cp "$dosya" "app/src/main/res/layout/$temiz_ad" || true
               fi
           done
 
-          # Temel Manifest dosyasını kontrol et ve yoksa yaz
+          # Java dosyalarını paket adlarına göre dinamik klasör oluşturarak taşıyoruz
+          find . -maxdepth 5 -name "*.java" ! -path "*/app/*" | while read -r java_dosya; do
+              # Java dosyasının içindeki gerçek package satırını buluyoruz (Örn: package com.test.app;)
+              PAKET_SATIRI=$(grep -E "^package " "$java_dosya" | head -n 1 || true)
+              if [ -n "$PAKET_SATIRI" ]; then
+                  # "package " kısmını ve sondaki ";" işaretini silip klasör yoluna dönüştürüyoruz (com/test/app)
+                  PAKET_YOLU=$(echo "$PAKET_SATIRI" | sed 's/package //' | sed 's/;//' | tr '.' '/' | tr -d '\r' | xargs)
+                  mkdir -p "app/src/main/java/$PAKET_YOLU"
+                  cp "$java_dosya" "app/src/main/java/$PAKET_YOLU/"
+                  echo "Java dosyası kendi orijinal paket yoluna taşındı: $PAKET_YOLU/$(basename "$java_dosya")"
+              else
+                  # Eğer package yazmıyorsa varsayılan ana dizine at
+                  mkdir -p app/src/main/java/com/example/otomatikuygulama
+                  cp "$java_dosya" app/src/main/java/com/example/otomatikuygulama/
+              fi
+          done
+
+          # Temel Manifest dosyasını yaz
           if [ ! -f "app/src/main/AndroidManifest.xml" ]; then
              cat << 'EOF' > app/src/main/AndroidManifest.xml
              <manifest xmlns:android="http://android.com">
@@ -114,7 +111,8 @@ jobs:
       - name: Gradle Sistemini Yukle ve APK Derle
         run: |
           echo "=== 4. APK Derleme Islemi Baslatiliyor ==="
-          gradle assembleDebug --project-dir .
+          # Hatanın kökenini tam döküm alabilmek için --stacktrace ekledik
+          gradle assembleDebug --project-dir . --stacktrace
 
       - name: Uretilen APK Dosyasini Yukle
         uses: actions/upload-artifact@v4
