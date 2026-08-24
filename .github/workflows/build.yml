@@ -23,17 +23,14 @@ jobs:
       - name: Android Proje Kalibini Sifirdan Olustur
         run: |
           echo "=== 1. Proje Yapisi Hazirlaniyor ==="
-          # Android için gerekli standart klasör mimarisini oluşturuyoruz
           mkdir -p app/src/main/java
           mkdir -p app/src/main/res/layout
           mkdir -p app/src/main/res/values
 
-          echo "=== 2. Eksik Gradle Yapılandırma Dosyaları Oluşturuluyor ==="
-          # settings.gradle oluşturma
+          echo "=== 2. Yapilandirma Dosyalari Olusturuluyor ==="
           echo "rootProject.name = 'OtomatikAndroidProjesi'" > settings.gradle
           echo "include ':app'" >> settings.gradle
 
-          # Ana build.gradle oluşturma
           cat << 'EOF' > build.gradle
           buildscript {
               repositories {
@@ -52,7 +49,6 @@ jobs:
           }
           EOF
 
-          # app/build.gradle oluşturma (SDK ve derleme ayarları)
           cat << 'EOF' > app/build.gradle
           plugins {
               id 'com.android.application'
@@ -79,14 +75,24 @@ jobs:
           }
           EOF
 
-          echo "=== 3. Mevcut Kod Dosyalari Doğru Klasorlere Tasiniyor ==="
-          # Deponuzda duran dağınık durumdaki tüm Java kodlarını oluşturduğumuz klasöre kopyalıyoruz
+          echo "=== 3. Kodlar Tasiniyor ve Isim Hatalari Tamir Ediliyor ==="
+          # Java kodlarını taşıyoruz
           find . -maxdepth 5 -name "*.java" ! -path "*/app/*" -exec cp {} app/src/main/java/ \; || true
           
-          # XML arayüz ve kaynak dosyalarını ilgili res klasörlerine taşıyoruz
-          find . -maxdepth 5 -name "*.xml" ! -name "build.gradle" ! -name "AndroidManifest.xml" ! -path "*/app/*" -exec cp {} app/src/main/res/layout/ \; || true
+          # XML dosyalarını taşırken ismi '$' ile başlayan hatalı dosyaları eliyoruz
+          find . -maxdepth 5 -name "*.xml" ! -name "build.gradle" ! -name "AndroidManifest.xml" ! -path "*/app/*" | while read -r dosya; do
+              dosya_adi=$(basename "$dosya")
+              # Eğer dosya adında '$' işareti varsa bunu derleme klasörüne kopyalama (Sistem dosyası artığıdır)
+              if [[ "$dosya_adi" == \$* ]]; then
+                  echo "Hatalı sistem dosyası atlandı: $dosya_adi"
+              else
+                  # Dosya adını tamamen küçük harfe çevirerek kopyala (Android kuralı)
+                  temiz_ad=$(echo "$dosya_adi" | tr 'A-Z' 'a-z')
+                  cp "$dosya" "app/src/main/res/layout/$temiz_ad" || true
+              fi
+          done
 
-          # Eğer depoda AndroidManifest.xml yoksa, temel bir tane oluşturuyoruz
+          # Temel Manifest dosyasını kontrol et ve yoksa yaz
           if [ ! -f "app/src/main/AndroidManifest.xml" ]; then
              cat << 'EOF' > app/src/main/AndroidManifest.xml
              <manifest xmlns:android="http://android.com">
@@ -94,7 +100,6 @@ jobs:
                      android:allowBackup="true"
                      android:label="Otomatik Uygulama"
                      android:theme="@android:style/Theme.DeviceDefault">
-                     <!-- Kodlarınızın çalışabilmesi için temel bir aktivite ekliyoruz -->
                      <activity android:name=".MainActivity" android:exported="true">
                          <intent-filter>
                              <action android:name="android.intent.action.MAIN" />
@@ -109,7 +114,6 @@ jobs:
       - name: Gradle Sistemini Yukle ve APK Derle
         run: |
           echo "=== 4. APK Derleme Islemi Baslatiliyor ==="
-          # Sunucudaki yerel gradle motoru ile sıfırdan oluşturulan projeyi derliyoruz
           gradle assembleDebug --project-dir .
 
       - name: Uretilen APK Dosyasini Yukle
