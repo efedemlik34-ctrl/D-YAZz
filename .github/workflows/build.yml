@@ -1,4 +1,4 @@
-name: ZIP icinden APK Derleme
+name: Turkce Karakter Uyumlu APK Derleme
 
 on:
   push:
@@ -16,45 +16,49 @@ jobs:
       - name: Depodaki Dosyalara Eris
         uses: actions/checkout@v4
 
-      - name: ZIP Dosyasini Tamamen Ac
+      - name: ZIP Dosyasini Ac ve Ismi Otomatik Duzelt
         run: |
-          # Hata almamak için ZIP içindeki her şeyi geçici bir klasöre açıyoruz
-          mkdir proje_klasoru
-          unzip -o *.zip -d proje_klasoru
+          # 1. ZIP dosyasını açıyoruz
+          unzip -o *.zip
           
-          # build.gradle dosyasının tam olarak nerede olduğunu bulalım ve oraya geçelim
-          GRADLE_PATH=$(find proje_klasoru -name "build.gradle" -o -name "build.gradle.kts" | head -n 1)
-          PROJE_DIZINI=$(dirname "$GRADLE_PATH")
-          echo "Proje ana dizini bulundu: $PROJE_DIZINI"
+          # 2. "kaynak kodlarını" veya benzeri Türkçe isimli klasörleri bulup ismini değiştiriyoruz
+          # Klasör adındaki boşluk ve Türkçe karakter sorununu kökten çözer
+          find . -maxdepth 1 -type d ! -name "." ! -name ".*" -exec mv {} ./android_proje \; 2>/dev/null || true
           
-          # Proje dosyalarını GitHub ana dizinine taşıyoruz ki Gradle çalışabilsin
-          mv "$PROJE_DIZINI"/* . || true
-          mv "$PROJE_DIZINI"/.* . || true 2>/dev/null
+          echo "Klasör ismi 'android_proje' olarak güvenli hale getirildi."
+          
+          # 3. build.gradle dosyasının yerini yeni klasörün içinde doğrula
+          PROJE_YOLU=$(find android_proje -name "build.gradle" -o -name "build.gradle.kts" | head -n 1 | xargs dirname)
+          
+          if [ -z "$PROJE_YOLU" ]; then
+            echo "HATA: Klasör içinde build.gradle bulunamadı!"
+            exit 1
+          fi
+          
+          echo "PROJE_DIZINI=$PROJE_YOLU" >> $GITHUB_ENV
 
       - name: Java Ortamini Kur
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17' # Çoğu modern Android projesi için Java 17 gereklidir
-
-      - name: Gradle Calistirma Izni Ver
-        run: chmod +x gradlew
-        continue-on-error: true
+          java-version: '17'
 
       - name: APK Dosyasini Derle (Build)
         run: |
-          # Eğer gradlew dosyası varsa onunla, yoksa sistemdeki gradle ile derle
+          # İsmi düzeltilen klasörün içine güvenle giriyoruz
+          cd "${{ env.PROJE_DIZINI }}"
+          
+          chmod +x gradlew || true
+          
           if [ -f "./gradlew" ]; then
             ./gradlew assembleDebug
           else
             gradle assembleDebug
           fi
 
-      - name: Hazirlanan APK Dosyasini Yukle
+      - name: Uretilen APK Dosyasini Yukle
         uses: actions/upload-artifact@v4
         with:
           name: Android-Uygulama-APK
-          path: app/build/outputs/apk/debug/*.apk
-          git diff-index --quiet HEAD || git commit -m "Build: kaynak kodlarını klasörü ZIP'ten çıkarıldı"
-          git push origin main
+          path: "**/build/outputs/apk/debug/*.apk"
           
