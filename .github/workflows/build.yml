@@ -58,28 +58,46 @@ jobs:
                   targetCompatibility JavaVersion.VERSION_17
               }
           }
+          dependencies {
+              // Hata veren sistem dosyalarının ait olduğu orijinal kütüphaneleri resmi olarak ekliyoruz
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'com.google.android.material:material:1.11.0'
+              implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+          }
           EOF
 
-          echo "=== 3. Temiz Kodlar Klasore Aktariliyor ==="
-          # Temiz XML'ler taşınıyor
+          echo "=== 3. Orijinal Kodlar Filtrelenerek Aktariliyor ==="
+          
+          # XML dosyalarını akıllı filtreyle süzüyoruz
           find . -maxdepth 5 -name "*.xml" ! -name "build.gradle" ! -name "AndroidManifest.xml" ! -path "*/app/*" | while read -r dosya; do
               dosya_adi=$(basename "$dosya")
-              if [[ "$dosya_adi" != *\$* ]]; then
+              
+              # Derlemeyi kitleyen sistem artığı sahte dosyaları tamamen engelliyoruz
+              if [[ "$dosya_adi" == *\$* ]] || \
+                 [[ "$dosya_adi" == abc_* ]] || \
+                 [[ "$dosya_adi" == mtrl_* ]] || \
+                 [[ "$dosya_adi" == btn_* ]] || \
+                 [[ "$dosya_adi" == design_* ]] || \
+                 [[ "$dosya_adi" == notification_* ]]; then
+                  echo "Sistem kütüphane artığı elendi: $dosya_adi"
+              else
                   temiz_ad=$(echo "$dosya_adi" | tr 'A-Z' 'a-z')
-                  cp "$dosya" "app/src/main/res/layout/$temiz_ad" || true
+                  # Dosyanın başındaki görünmez bozuk karakterleri (BOM) temizleyip kopyala
+                  sed '1s/^\xEF\xBB\xBF//' "$dosya" > "app/src/main/res/layout/$temiz_ad" || true
+                  echo "Orijinal arayüz dosyası taşındı: $temiz_ad"
               fi
           done
 
-          # Java'lar orijinal paket adlarına göre taşınıyor
+          # Java dosyalarını paket yollarına göre taşıyoruz
           find . -maxdepth 5 -name "*.java" ! -path "*/app/*" | while read -r java_dosya; do
               PAKET_SATIRI=$(grep -E "^package " "$java_dosya" | head -n 1 || true)
               if [ -n "$PAKET_SATIRI" ]; then
                   PAKET_YOLU=$(echo "$PAKET_SATIRI" | sed 's/package //' | sed 's/;//' | tr '.' '/' | tr -d '\r' | xargs)
                   mkdir -p "app/src/main/java/$PAKET_YOLU"
-                  cp "$java_dosya" "app/src/main/java/$PAKET_YOLU/"
+                  sed '1s/^\xEF\xBB\xBF//' "$java_dosya" > "app/src/main/java/$PAKET_YOLU/$(basename "$java_dosya")"
               else
                   mkdir -p app/src/main/java/com/example/otomatikuygulama
-                  cp "$java_dosya" app/src/main/java/com/example/otomatikuygulama/
+                  sed '1s/^\xEF\xBB\xBF//' "$java_dosya" > app/src/main/java/com/example/otomatikuygulama/$(basename "$java_dosya")
               fi
           done
 
@@ -90,7 +108,7 @@ jobs:
                  <application
                      android:allowBackup="true"
                      android:label="Otomatik Uygulama"
-                     android:theme="@android:style/Theme.DeviceDefault">
+                     android:theme="@style/Theme.AppCompat.Light.NoActionBar">
                      <activity android:name=".MainActivity" android:exported="true">
                          <intent-filter>
                              <action android:name="android.intent.action.MAIN" />
@@ -104,13 +122,11 @@ jobs:
 
       - name: Gercek APK Derlemesini Baslat
         run: |
-          echo "=== 4. APK Uretimi Basladi ==="
-          # || true komutunu kaldırdık, gerçek derleme yapıyor
+          echo "=== 4. Temiz APK Uretimi Basladi ==="
           gradle assembleDebug --project-dir .
 
       - name: Uretilen APK'yi Ana Dizine Topla
         run: |
-          # Üretilen APK'yı bulup kolay erişim için ana dizine taşıyoruz
           mkdir -p ciktilar
           find app/build/outputs/apk/debug/ -name "*.apk" -exec cp {} ciktilar/uygulama.apk \; || echo "APK kopyalanamadi!"
 
